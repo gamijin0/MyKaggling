@@ -54,8 +54,8 @@ if (__name__ == "__main__"):
 
     sess.run(tf.global_variables_initializer())  # 初始化变量
 
-    step_length = 500
-    Train_times = 2000
+    step_length = 1000
+    Train_times = 8000
     print("Step_length: %d, Train_times: %d" % (step_length, Train_times))
 
 
