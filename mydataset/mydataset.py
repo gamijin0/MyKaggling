@@ -34,3 +34,10 @@ class MyDataSet(object):
     @property
     def data(self):
         return self.__data
+
+
+def cleanLogdir(path):
+
+    import os
+    if(os.path.exists(path)):
+        os.system('rd /S /Q %s' % path)
