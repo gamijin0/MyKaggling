@@ -2,3 +2,5 @@
 
 .idea
 data
+/Titanic/data/
+*log*

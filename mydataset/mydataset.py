@@ -2,6 +2,8 @@ from progressbar import ProgressBar
 import numpy as np
 
 
+#to be used for precess your data
+
 class MyDataSet(object):
     def __init__(self,filename:str,nrows=None):
         self.__filename = filename
