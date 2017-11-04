@@ -5,3 +5,11 @@ data
 /Titanic/data/
 *log*
 *.csv
+Digit-Recognizer/__pycache__/
+Digit-Recognizer/answer.txt
+TensorFlow_Learning_MNIST/MNIST_data/
+TensorFlow_Learning_MNIST/__pycache__/
+Titanic/code/titanic_predictions.csv
+Titanic/code/titanic_predictions2.csv
+mydataset/__pycache__/
+train.csv
