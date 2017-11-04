@@ -4,3 +4,4 @@
 data
 /Titanic/data/
 *log*
+*.csv
