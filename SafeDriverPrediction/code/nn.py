@@ -13,22 +13,25 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split
 
 # =======================变量配置=====================================
+
+USE_SAVE=False
+
 save_file_path = "../save/model.ckpt"
 save_dir_path = "../save"
 log_path = "../log"
-train_file_path = "../data/train.csv"
+train_file_path = "../data/new_train.csv"
 test_file_path = "../data/test.csv"
 
 # 每层节点数
 hidden_nodes_1 = 57  # num of features
-hidden_nodes_2 = 200
-hidden_nodes_3 = 100
+hidden_nodes_2 = 50
+hidden_nodes_3 = 50
 output_nodes = 1
 
 beta = 0.01
 
-step_length = 20000
-Train_times = 100000
+step_length = 10000
+Train_times = 10000
 
 
 # =======================自定义函数====================================
@@ -111,14 +114,15 @@ summary_writer = tf.summary.FileWriter(log_path, sess.graph)
 saver = tf.train.Saver()  # 用于保存模型
 # ======保存与读取模型=========
 
-if (os.path.exists(save_file_path)):
+if (os.path.exists(save_dir_path) and USE_SAVE==True):
     # 若有存档则读取存档
     saver.restore(sess, save_file_path)
     print("Restored")
 else:
     sess.run(tf.global_variables_initializer())  # 初始化变量
     print('Initialized')
-    os.mkdir(save_dir_path)
+    if(not os.path.exists(save_dir_path)):
+        os.mkdir(save_dir_path)
 
 print("Step_length: %d, Train_times: %d" % (step_length, Train_times))
 
@@ -128,10 +132,11 @@ with ProgressBar() as bar:  # 进度条
         # 随机抓取训练数据中的step_length个批处理数据点，然后用这些数据点作为参数替换之前的占位符(x,y_)来运行train_step
         # 而非每次都将所有数据作为趋近目标
         batch = train_set.getNextBatch(step_length)
-        _, summary = sess.run([optimizer, merged], feed_dict={x: getFeatures(batch), y_: getLable(batch)})
+        _, summary,cost = sess.run([optimizer, merged,loss], feed_dict={x: getFeatures(batch), y_: getLable(batch)})
         summary_writer.add_summary(summary, i)
         if (i % (Train_times / 100) == 0):
             saver.save(sess, save_file_path)  # 每达到进度的1%就保存一次
+            print(" [cost]:"+cost)
             #     test_batch = train_set.getNextBatch(step_length)
             #
             #     predict = sess.run(y,feed_dict={x:getFeatures(test_batch)})
