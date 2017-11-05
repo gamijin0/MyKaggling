@@ -42,5 +42,9 @@ class MyDataSet(object):
 def cleanLogdir(path):
 
     import os
+    # if(os.path.exists(path)):
+    #     os.system('rd /S /Q %s' % path)
+    #
+    import shutil
     if(os.path.exists(path)):
-        os.system('rd /S /Q %s' % path)
+        shutil.rmtree(path=path)
