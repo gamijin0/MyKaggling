@@ -21,20 +21,23 @@ save_dir_path = "../save"
 log_path = "../log"
 train_file_path = "../data/train.csv"
 test_file_path = "../data/test.csv"
+prediction_file_path = "prediction.csv"
 
 # 每层节点数
-hidden_nodes_1 = 57  # num of features
-hidden_nodes_2 = 100
+feature_num = 57  # num of features,will be changed
+hidden_nodes_1 = 50
 
-hidden_nodes_3 = 100
+hidden_nodes_2 = 50
 output_nodes = 1
 
-learning_rate = 0.0001
+MAX_ONE_HOT_SIZE = 20
+
+learning_rate = 0.001
 
 beta = 0.01
 
-step_length = 10000
-Train_times = 10000
+step_length = 6000
+Train_times = 1000
 
 
 # =======================自定义函数====================================
@@ -71,36 +74,91 @@ def getLable(batch):
 def getFeatures(batch):
     return batch.iloc[:, 2:].values
 
-def process_data(dataFrame):
-    # col_to_drop = dataFrame.columns[dataFrame.columns.str.startswith('ps_calc_')]
-    # dataFrame = dataFrame.drop(col_to_drop,axis=1)
 
-    dataFrame.replace(-1,np.nan)
+def process_data(train_df,test_df):
+    train_df = pd.DataFrame(train_df)
+    test_df = pd.DataFrame(test_df)
+    train_df.fillna(-1) #用-1填充空缺值
+    test_df.fillna(-1)
+    data_col  = [c for c in train_df.columns if c not in ["id", "target"]] #找出所有的数据列的列名
+    train_df['negative_one_vals'] = np.sum((train_df[data_col] == -1).values, axis=1) #将-1出现的次数也作为一个feature
+    test_df['negative_one_vals'] = np.sum((test_df[data_col] == -1).values, axis=1)
+    for col in data_col:
+        #检查每一列,如果此列的值是由少量的离散值构成,则对此列进行one_hot编码(映射为新的feature)
+        #故需要同时对test数据集进行one_hot
+        unique_value = train_df[col].unique()
+        if(len(unique_value)>2 and len(unique_value)<MAX_ONE_HOT_SIZE):
+            for val in unique_value:
+                train_df[col + '_' + str(val)] = np.int8(train_df[col].values == val)
+                test_df[col+'_'+str(val)] = np.int8(test_df[col].values==val)
+    return train_df,test_df
 
-    to_be_normalized = dataFrame.iloc[:,2:]
-    dataFrame.loc[:,2:] = (to_be_normalized-to_be_normalized.mean())/(to_be_normalized.max()-to_be_normalized.min())
+def process_data_1(df):
 
-    cat_features = [a for a in dataFrame.columns if a.endswith('cat')]
-    for column in cat_features:
-        temp = pd.get_dummies(pd.Series(dataFrame[column]))
-        train = pd.concat([dataFrame, temp], axis=1)
-        train = dataFrame.drop([column], axis=1)
-    return dataFrame
+    df = pd.DataFrame(df)
+    d_median = df.median(axis=0)
+    d_mean = df.mean(axis=0)
+    df.fillna(-1)
+    one_hot = {c: list(df[c].unique()) for c in df.columns if c not in ['id', 'target']}
+    dcol = [c for c in df.columns if c not in ['id', 'target']]
+    df['ps_car_13_x_ps_reg_03'] = df['ps_car_13'] * df['ps_reg_03']
+    df['negative_one_vals'] = np.sum((df[dcol] == -1).values, axis=1)
+    for c in dcol:
+        if '_bin' not in c:  # standard arithmetic
+            df[c + str('_median_range')] = (df[c].values > d_median[c]).astype(np.int)
+            df[c + str('_mean_range')] = (df[c].values > d_mean[c]).astype(np.int)
+            # df[c+str('_sq')] = np.power(df[c].values,2).astype(np.float32)
+            # df[c+str('_sqr')] = np.square(df[c].values).astype(np.float32)
+            # df[c+str('_log')] = np.log(np.abs(df[c].values) + 1)
+            # df[c+str('_exp')] = np.exp(df[c].values) - 1
+    for c in one_hot:
+        if len(one_hot[c]) > 2 and len(one_hot[c]) < 7:
+            for val in one_hot[c]:
+                df[c + '_oh_' + str(val)] = (df[c].values == val).astype(np.int)
 
+
+    to_be_normalized = df.iloc[:, 2:]
+    df.loc[:, 2:] = (to_be_normalized - to_be_normalized.mean()) / (to_be_normalized.max() - to_be_normalized.min())
+
+    return df
+
+
+def predict(test_df,sess,filename):
+    res = pd.DataFrame({'id':[],'target':[]})
+    PREDICT_BATCH_SIZE = 50000
+    test_df = pd.DataFrame(test_df)
+    for i in range(0,int(test_df.values.shape[0]/PREDICT_BATCH_SIZE)+1):
+        batch = test_df.iloc[i*PREDICT_BATCH_SIZE:(i+1)*PREDICT_BATCH_SIZE,1:]
+        temp_prediction = pd.DataFrame({
+            'id':batch.iloc[:,0].values
+        })
+        temp_prediction['target'] = sess.run(y, feed_dict={x: batch.values})
+        res  = pd.concat([res,temp_prediction])
+
+    res.to_csv(filename, index=False, float_format='%.5f')
+    print("Make prefiction...")
 
 # =======================读取数据====================================
 cleanLogdir(log_path)
 
 train_set = MyDataSet(train_file_path, header=0)
-train_set.setData(process_data(train_set.data))
-challange = MyDataSet(test_file_path, header=0)
-challange.setData(process_data(challange.data))
+challange_set = MyDataSet(test_file_path, header=0)
 
-ids = challange.data.iloc[:, 0].values
-final = pd.DataFrame({
-    'id': ids,
-    'target': np.zeros(ids.shape[0])
-})
+tr_df,ch_df = process_data(train_set.data, challange_set.data)
+
+train_set.setData(tr_df)
+challange_set.setData(ch_df)
+
+feature_num =  train_set.data.values.shape[1]-2
+print("Feature num:",feature_num)
+
+
+#
+# ids = challange_set.data.iloc[:, 0].values
+# final = pd.DataFrame({
+#     'id': ids,
+#     'target': np.zeros(ids.shape[0])
+# })
 
 # =======================TensorFlow==================================
 
@@ -109,24 +167,24 @@ final = pd.DataFrame({
 sess = tf.Session(config=tf.ConfigProto(device_count={'gpu': 0}))
 
 # 占位符,运行时由实际数据替代
-x = tf.placeholder(dtype="float64", shape=[None, hidden_nodes_1], name="Input")
+x = tf.placeholder(dtype="float64", shape=[None, feature_num], name="Input")
 y_ = tf.placeholder(dtype="float64", shape=[None, output_nodes], name="Lable")
 
 # 定义每层的weight 与 bias
 # weight使用truncated_normal(截断正态随机)初始化,bias填充0
-weight1 = tf.Variable(tf.truncated_normal([hidden_nodes_1, hidden_nodes_2], dtype=tf.float64), name="W1")
-biases1 = tf.Variable(tf.zeros([hidden_nodes_2], dtype=tf.float64), name="B1")
+weight1 = tf.Variable(tf.truncated_normal([feature_num, hidden_nodes_1], dtype=tf.float64), name="W1")
+biases1 = tf.Variable(tf.zeros([hidden_nodes_1], dtype=tf.float64), name="B1")
 m1 = tf.matmul(x, weight1) + biases1  # 数据入口x
 res1 = tf.nn.relu(m1)
 res1 = tf.nn.dropout(res1,0.1)
 
-weight2 = tf.Variable(tf.truncated_normal([hidden_nodes_2, hidden_nodes_3], dtype=tf.float64), name="W2")
-biases2 = tf.Variable(tf.zeros([hidden_nodes_3], dtype=tf.float64), name="B2")
+weight2 = tf.Variable(tf.truncated_normal([hidden_nodes_1, hidden_nodes_2], dtype=tf.float64), name="W2")
+biases2 = tf.Variable(tf.zeros([hidden_nodes_2], dtype=tf.float64), name="B2")
 m2 = tf.matmul(res1, weight2) + biases2
 res2 = tf.nn.relu(m2)
 res2 = tf.nn.dropout(res2,0.01)
 
-weight3 = tf.Variable(tf.truncated_normal([hidden_nodes_3, output_nodes], dtype=tf.float64), name="W3")
+weight3 = tf.Variable(tf.truncated_normal([hidden_nodes_2, output_nodes], dtype=tf.float64), name="W3")
 biases3 = tf.Variable(tf.zeros([output_nodes], dtype=tf.float64), name="B3")
 res3 = tf.matmul(res2, weight3) + biases3
 
@@ -175,9 +233,6 @@ with ProgressBar() as bar:  # 进度条
             #     predict = sess.run(y,feed_dict={x:getFeatures(test_batch)})
             #     print('Training accuracy: %f' % accuracy(predict, getLable(test_batch)))
             #
-        if(i%(Train_times/2)==0):
+        if(i%(Train_times/2)==0 and i>0):
             # 保存结果
-            final_prediction = sess.run(y, feed_dict={x: challange.data.iloc[:, 1:].values})
-            final["target"] = final_prediction
-            final.to_csv("prediction.csv", index=False, float_format='%.5f')
-            print("Make prefiction...")
+            predict(challange_set.data,sess,prediction_file_path)

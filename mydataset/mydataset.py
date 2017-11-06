@@ -20,6 +20,7 @@ class MyDataSet(object):
         #             pass
         import pandas as pd
         data = pd.read_csv(self.__filename,nrows=nrows,header=header)
+        data.sample(frac=1,replace=True)
         # data  = np.loadtxt(dtype=np.int32,delimiter=',',)
         return data
 
@@ -27,7 +28,7 @@ class MyDataSet(object):
         self.__data  = data
 
     def getNextBatch(self,batch_size:int):
-        self.__progress %= (len(self.__data)-1)
+        self.__progress %= (self.__data.values.shape[0]-1)
         data = self.__data.iloc[self.__progress:self.__progress+batch_size,:]
         # data = self.__data[self.__progress:self.__progress+batch_size]
         self.__progress+=batch_size
