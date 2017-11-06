@@ -14,19 +14,22 @@ from sklearn.model_selection import train_test_split
 
 # =======================变量配置=====================================
 
-USE_SAVE=False
+USE_SAVE=True
 
 save_file_path = "../save/model.ckpt"
 save_dir_path = "../save"
 log_path = "../log"
-train_file_path = "../data/new_train.csv"
+train_file_path = "../data/train.csv"
 test_file_path = "../data/test.csv"
 
 # 每层节点数
 hidden_nodes_1 = 57  # num of features
-hidden_nodes_2 = 50
-hidden_nodes_3 = 50
+hidden_nodes_2 = 100
+
+hidden_nodes_3 = 100
 output_nodes = 1
+
+learning_rate = 0.0001
 
 beta = 0.01
 
@@ -36,14 +39,21 @@ Train_times = 10000
 
 # =======================自定义函数====================================
 
+
+def normalize(series):
+    mean = series.mean()
+    stdev= series.std()
+    return (series - mean)/stdev
+
+
 # 用于初始化权重和偏置项
 def weight_variable(shape, name=None):
-    initial = tf.truncated_normal(shape, stddev=0.1)  # 正态分布随机
+    initial = tf.random_normal(shape, stddev=1)  # 正态分布随机
     return tf.Variable(initial, name=name)
 
 
 def bias_variable(shape, name=None):
-    initial = tf.constant(0.1, shape=shape)
+    initial = tf.truncated_normal(shape=shape) #截断正态随机
     return tf.Variable(initial, name=name)
 
 
@@ -61,11 +71,30 @@ def getLable(batch):
 def getFeatures(batch):
     return batch.iloc[:, 2:].values
 
+def process_data(dataFrame):
+    # col_to_drop = dataFrame.columns[dataFrame.columns.str.startswith('ps_calc_')]
+    # dataFrame = dataFrame.drop(col_to_drop,axis=1)
+
+    dataFrame.replace(-1,np.nan)
+
+    to_be_normalized = dataFrame.iloc[:,2:]
+    dataFrame.loc[:,2:] = (to_be_normalized-to_be_normalized.mean())/(to_be_normalized.max()-to_be_normalized.min())
+
+    cat_features = [a for a in dataFrame.columns if a.endswith('cat')]
+    for column in cat_features:
+        temp = pd.get_dummies(pd.Series(dataFrame[column]))
+        train = pd.concat([dataFrame, temp], axis=1)
+        train = dataFrame.drop([column], axis=1)
+    return dataFrame
+
 
 # =======================读取数据====================================
 cleanLogdir(log_path)
+
 train_set = MyDataSet(train_file_path, header=0)
+train_set.setData(process_data(train_set.data))
 challange = MyDataSet(test_file_path, header=0)
+challange.setData(process_data(challange.data))
 
 ids = challange.data.iloc[:, 0].values
 final = pd.DataFrame({
@@ -89,23 +118,27 @@ weight1 = tf.Variable(tf.truncated_normal([hidden_nodes_1, hidden_nodes_2], dtyp
 biases1 = tf.Variable(tf.zeros([hidden_nodes_2], dtype=tf.float64), name="B1")
 m1 = tf.matmul(x, weight1) + biases1  # 数据入口x
 res1 = tf.nn.relu(m1)
+res1 = tf.nn.dropout(res1,0.1)
 
 weight2 = tf.Variable(tf.truncated_normal([hidden_nodes_2, hidden_nodes_3], dtype=tf.float64), name="W2")
 biases2 = tf.Variable(tf.zeros([hidden_nodes_3], dtype=tf.float64), name="B2")
 m2 = tf.matmul(res1, weight2) + biases2
 res2 = tf.nn.relu(m2)
+res2 = tf.nn.dropout(res2,0.01)
 
 weight3 = tf.Variable(tf.truncated_normal([hidden_nodes_3, output_nodes], dtype=tf.float64), name="W3")
 biases3 = tf.Variable(tf.zeros([output_nodes], dtype=tf.float64), name="B3")
 res3 = tf.matmul(res2, weight3) + biases3
 
-regularizers = tf.nn.l2_loss(weight1) + tf.nn.l2_loss(weight2) + tf.nn.l2_loss(weight3)
+# regularizers = tf.nn.l2_loss(weight1) + tf.nn.l2_loss(weight2) + tf.nn.l2_loss(weight3)  #用于避免过拟合
 loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=res3, labels=y_, name="Cost"))  # 结果出口y
-loss = tf.reduce_mean(loss + beta * regularizers)
+# loss = tf.reduce_mean(loss + beta * regularizers)
+
 y = tf.nn.sigmoid(res3)
 
 # 优化目标
-optimizer = tf.train.GradientDescentOptimizer(0.01).minimize(loss)
+optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss)
+# optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate,momentum=0.02).minimize(loss)
 
 tf.summary.scalar("Cost", loss)  # 持久化一个标量Cost
 merged = tf.summary.merge_all()  # 用于可视化
@@ -136,14 +169,15 @@ with ProgressBar() as bar:  # 进度条
         summary_writer.add_summary(summary, i)
         if (i % (Train_times / 100) == 0):
             saver.save(sess, save_file_path)  # 每达到进度的1%就保存一次
-            print(" [cost]:"+cost)
+            print(" [cost]:",cost)
             #     test_batch = train_set.getNextBatch(step_length)
             #
             #     predict = sess.run(y,feed_dict={x:getFeatures(test_batch)})
             #     print('Training accuracy: %f' % accuracy(predict, getLable(test_batch)))
             #
-
-# 保存结果
-final_prediction = sess.run(y, feed_dict={x: challange.data.iloc[:, 1:].values})
-final["target"] = final_prediction
-final.to_csv("prediction.csv", index=False)
+        if(i%(Train_times/2)==0):
+            # 保存结果
+            final_prediction = sess.run(y, feed_dict={x: challange.data.iloc[:, 1:].values})
+            final["target"] = final_prediction
+            final.to_csv("prediction.csv", index=False, float_format='%.5f')
+            print("Make prefiction...")

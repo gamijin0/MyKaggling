@@ -23,6 +23,9 @@ class MyDataSet(object):
         # data  = np.loadtxt(dtype=np.int32,delimiter=',',)
         return data
 
+    def setData(self,data):
+        self.__data  = data
+
     def getNextBatch(self,batch_size:int):
         self.__progress %= (len(self.__data)-1)
         data = self.__data.iloc[self.__progress:self.__progress+batch_size,:]
